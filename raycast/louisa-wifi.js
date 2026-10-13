@@ -18,7 +18,7 @@
 ObjC.import('Foundation')
 ObjC.import('AppKit')
 
-const REPO = 'madeyexz/louisa-wifi'
+const REPO = 'PipperL/louisa-wifi'
 const SSID = 'LouisaCoffee'
 const HOME = $.NSHomeDirectory().js
 const STATUS = `${HOME}/Library/Application Support/LouisaWiFi/status.json`
@@ -64,7 +64,7 @@ function loadStores(appPath) {
   const weekOld = sh(`find ${q(CACHE)} -mtime -7 2>/dev/null || true`) === ''
   if (weekOld) {
     try {
-      sh(`mkdir -p ${q(CACHE.replace(/\/[^/]+$/, ''))} && curl -fsSL --max-time 10 -o ${q(CACHE + '.tmp')} https://raw.githubusercontent.com/${REPO}/main/data/stores.json && mv ${q(CACHE + '.tmp')} ${q(CACHE)}`)
+      sh(`mkdir -p ${q(CACHE.replace(/\/[^/]+$/, ''))} && curl -fsSL --max-time 10 -o ${q(CACHE + '.tmp')} https://raw.githubusercontent.com/${REPO}/data/data/stores.json && mv ${q(CACHE + '.tmp')} ${q(CACHE)}`)
     } catch (e) {} // offline: fall back to the cached copy
   }
   return exists(CACHE) ? JSON.parse(read(CACHE)) : null
