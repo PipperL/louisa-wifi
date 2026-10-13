@@ -32,6 +32,7 @@ final class Joiner {
     private var snoozed: [String: Date] = [:]       // BSSIDs we recently failed on
     private var quietUntil = Date.distantPast       // our own joins fire link events; ignore them
     private var learned: [String: Learned]          // BSSID → what worked there; guarded by lock
+    private var epoch = 0                           // bumped by user actions to stop a running attempt; guarded by lock
     private let lock = NSLock()
 
     private struct Learned: Codable { let store: String; let password: String }
@@ -81,15 +82,17 @@ final class Joiner {
             guard !self.autoQueued, UserDefaults.standard.bool(forKey: "autoConnect") else { return }
             self.autoQueued = true
             let here = Locator.shared.location
+            let e = self.currentEpoch()
             self.queue.async {
-                self.runAuto(near: here)
+                self.runAuto(near: here, epoch: e)
                 DispatchQueue.main.async { self.autoQueued = false }
             }
         }
     }
 
-    /// User picked a store from the menu or Raycast.
-    func connect(to store: Store) {
+    /// User picked a store from the menu or Raycast, optionally with the exact password.
+    func connect(to store: Store, password: String? = nil) {
+        let e = interrupt()
         queue.async {
             // Trying passwords drops the current connection, so don't if it already works.
             // ssid() is nil until Location is authorized; then fall back to "is it online?".
@@ -101,27 +104,34 @@ final class Joiner {
             guard let i = self.iface, let nets = self.scan(i) else {
                 return self.report(.failed("附近找不到路易莎 Wi-Fi"), notify: true)
             }
-            let remembered = self.learnedPasswords(nets.bssids, store: store.name)
-            for pw in unique(remembered + store.passwords) where self.join(i, nets.best, pw, self.describe(pw, store: store.name, learned: remembered.contains(pw))) {
-                self.remember(nets, store: store.name, password: pw)
-                return self.report(.connected(store.name), notify: true)
+            let remembered = password == nil ? self.learnedPasswords(nets.bssids, store: store.name) : []
+            let tried = password.map { [$0] } ?? remembered + store.passwords
+            for pw in unique(tried) {
+                guard self.current(e) else { return }
+                if self.join(i, nets.best, pw, self.describe(pw, store: store.name, learned: remembered.contains(pw))) {
+                    self.remember(nets, store: store.name, password: pw)
+                    return self.report(.connected(store.name), notify: true)
+                }
             }
-            self.report(.failed("無法連上\(store.name)，請確認門市與密碼"), notify: true)
+            // The status text is logged and written to status.json, so it never includes the password.
+            let why = password == nil ? "無法連上\(store.name)，請確認門市與密碼" : "指定的密碼無法連上\(store.name)"
+            self.report(.failed(why), notify: true)
         }
     }
 
     /// Connect to the nearest store, ignoring auto-connect setting and snoozes.
     func connectNearest() {
         let here = Locator.shared.location
+        let e = interrupt()
         queue.async {
             self.snoozed.removeAll()
-            self.runAuto(near: here, manual: true)
+            self.runAuto(near: here, manual: true, epoch: e)
         }
     }
 
     // MARK: - Auto
 
-    private func runAuto(near here: CLLocation?, manual: Bool = false) {
+    private func runAuto(near here: CLLocation?, manual: Bool = false, epoch e: Int) {
         guard let i = iface, i.powerOn() else {
             if manual { report(.failed("請先開啟 Wi-Fi"), notify: true) }
             return
@@ -156,13 +166,32 @@ final class Joiner {
         }
 
         report(.connecting(tries[0].store))
-        for t in tries where join(i, nets.best, t.password, describe(t.password, store: t.store, learned: remembered.contains(t.password))) {
-            remember(nets, store: t.store, password: t.password)
-            return report(.connected(t.store), notify: true)
+        for t in tries {
+            guard current(e) else { return }
+            if join(i, nets.best, t.password, describe(t.password, store: t.store, learned: remembered.contains(t.password))) {
+                remember(nets, store: t.store, password: t.password)
+                return report(.connected(t.store), notify: true)
+            }
         }
         snoozed[key] = Date().addingTimeInterval(600)
         report(.failed("自動連線失敗，請從選單選擇門市"), notify: true)
     }
+
+    // MARK: - Interrupting
+
+    /// A user action supersedes whatever is running; it stops before its next password.
+    private func interrupt() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        epoch += 1
+        return epoch
+    }
+
+    private func currentEpoch() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return epoch
+    }
+
+    private func current(_ e: Int) -> Bool { currentEpoch() == e }
 
     // MARK: - Wi-Fi
 
@@ -190,19 +219,27 @@ final class Joiner {
         }
     }
 
-    /// Which form of the store's phone number a candidate is, e.g. "新竹關新直營門市 #1/2 完整號碼（03-577-0157）".
-    /// Collected in the log to learn which forms stores actually use.
+    /// Which candidate this is and how it relates to the store's phone number, e.g.
+    /// "新竹關新直營門市 #1/2 完整號碼（03-577-0157）" or "… 手動輸入，去掉 0（…）".
+    /// Collected in the log to learn which forms stores actually use; never the password itself.
     private func describe(_ password: String, store name: String, learned: Bool) -> String {
         if learned { return "\(name) 記住的密碼" }
-        guard let s = Stores.named(name), let n = s.passwords.firstIndex(of: password) else { return "\(name) 不明候選" }
-        let digits = s.phone.filter { $0.isASCII && $0.isNumber }
-        let form: String
-        if password.hasPrefix("0") && digits.hasPrefix(password) { form = "完整號碼" }
-        else if digits.hasPrefix("0" + password) { form = "去掉 0" }
-        else if digits.hasPrefix("02" + password) { form = "去掉區碼 02" }
-        else if password.count == 8 && digits.contains(password) { form = "後 8 碼" }
-        else { form = "其他" }
-        return "\(name) #\(n + 1)/\(s.passwords.count) \(form)（\(s.phone)）"
+        guard let s = Stores.named(name) else { return "\(name) 不明候選" }
+        let form = Self.form(of: password, phone: s.phone)
+        if let n = s.passwords.firstIndex(of: password) {
+            return "\(name) #\(n + 1)/\(s.passwords.count) \(form)（\(s.phone)）"
+        }
+        return "\(name) 手動輸入，\(form)（\(s.phone)）"
+    }
+
+    private static func form(of password: String, phone: String) -> String {
+        let digits = phone.filter { $0.isASCII && $0.isNumber }
+        if password.hasPrefix("0") && digits.hasPrefix(password) { return "完整號碼" }
+        if digits.hasPrefix("0" + password) { return "去掉 0" }
+        if digits.hasPrefix("02" + password) { return "去掉區碼 02" }
+        if password.count == 8 && digits.contains(password) { return "後 8 碼" }
+        if !password.isEmpty && digits.contains(password) { return "電話的其他片段" }
+        return "與電話號碼無關"
     }
 
     private func learnedPasswords(_ bssids: [String], store: String) -> [String] {

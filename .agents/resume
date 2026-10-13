@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# No services or authentication need restoration. Check only the cached tools;
+# dependency installation belongs in setup, never in resume.
+python3 --version
+echo "Linux orb ready for data maintenance and source checks; app builds require macOS."

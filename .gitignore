@@ -1,1 +1,3 @@
 build/
+.amp/portals/*
+__pycache__/

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Linux orbs support data maintenance and source checks. The app and Raycast
+# command require macOS; Linux Swift cannot supply the Apple frameworks.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SECONDS=0
+echo "Checking Python and HTTPS certificates..."
+packages=()
+if ! command -v python3 >/dev/null 2>&1; then
+  packages+=(python3)
+fi
+if ! dpkg-query -W -f='${Status}' ca-certificates 2>/dev/null | grep -qx 'install ok installed'; then
+  packages+=(ca-certificates)
+fi
+if ((${#packages[@]})); then
+  sudo apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+fi
+echo "Prerequisites ready (${SECONDS}s)."
+
+# There are no third-party Python packages or lockfiles. Do not run the scraper
+# here: it accesses the live website and replaces tracked data/stores.json.
+echo "Checking Python, store JSON, and app plist without changing files..."
+python3 - <<'PY'
+import ast
+import json
+import plistlib
+import ssl
+from pathlib import Path
+
+ast.parse(Path("scripts/fetch_stores.py").read_text(encoding="utf-8"))
+json.loads(Path("data/stores.json").read_text(encoding="utf-8"))
+with Path("app/Info.plist").open("rb") as file:
+    plistlib.load(file)
+assert ssl.create_default_context().get_ca_certs(), "No trusted HTTPS certificates"
+PY
+bash -n build.sh install.sh .agents/setup .agents/resume
+echo "Setup complete (${SECONDS}s). No package dependencies or services are needed."
+echo "Build and runtime checks require macOS with Xcode Command Line Tools (see CI)."

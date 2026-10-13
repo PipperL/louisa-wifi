@@ -47,6 +47,7 @@ final class MenuController: NSObject, NSMenuDelegate {
             menu.addItem(disabled(stale))
         }
         menu.addItem(disabled(status.text))
+        if let passwords = passwordMenu() { menu.addItem(passwords) }
         menu.addItem(.separator())
 
         let onlyKnown = UserDefaults.standard.bool(forKey: "onlyKnown")
@@ -69,7 +70,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         for (city, cityStores) in Stores.byCity(stores) {
             let cityItem = NSMenuItem(title: "\(city)（\(cityStores.count)）", action: nil, keyEquivalent: "")
             cityItem.submenu = NSMenu()
-            cityStores.forEach { cityItem.submenu!.addItem(storeItem($0, detail: nil)) }
+            cityStores.forEach { cityItem.submenu!.addItem(allStoreItem($0)) }
             all.submenu!.addItem(cityItem)
         }
         all.isEnabled = !stores.isEmpty
@@ -128,6 +129,45 @@ final class MenuController: NSObject, NSMenuDelegate {
         return i
     }
 
+    /// For when the store's password is posted on the wall: try exactly that one.
+    /// Other stores' passwords are under 所有門市.
+    private func passwordMenu() -> NSMenuItem? {
+        // Same 5 km reach as auto-connect, so it doesn't offer a store across town.
+        guard let here = Locator.shared.location,
+              let store = Stores.nearest(to: here, limit: 1).first(where: { $0.meters < 5000 })?.store else { return nil }
+        let item = NSMenuItem(title: "用密碼連線", action: nil, keyEquivalent: "")
+        item.submenu = NSMenu()
+        item.submenu!.addItem(disabled(store.name))
+        passwordItems(store).forEach { $0.indentationLevel = 1; item.submenu!.addItem($0) }
+        return item
+    }
+
+    /// A store under 所有門市: try every candidate, or pick one.
+    private func allStoreItem(_ store: Store) -> NSMenuItem {
+        let item = NSMenuItem(title: store.name, action: nil, keyEquivalent: "")
+        item.toolTip = "\(store.address)\n\(store.phone)"
+        item.submenu = NSMenu()
+        let auto = storeItem(store, detail: nil)
+        auto.title = "自動嘗試"
+        item.submenu!.addItem(auto)
+        item.submenu!.addItem(.separator())
+        passwordItems(store).forEach { item.submenu!.addItem($0) }
+        return item
+    }
+
+    /// The store's candidate passwords, then 輸入密碼… for anything else.
+    private func passwordItems(_ store: Store) -> [NSMenuItem] {
+        var items = store.passwords.map { pw -> NSMenuItem in
+            let i = action(pw, #selector(connectWithPassword(_:)))
+            i.representedObject = [store.name, pw]
+            return i
+        }
+        let other = action("輸入密碼…", #selector(enterPassword(_:)))
+        other.representedObject = store.name
+        items.append(other)
+        return items
+    }
+
     private func distance(_ meters: Double) -> String {
         meters < 1000 ? "\(Int(meters / 10) * 10) m" : String(format: "%.1f km", meters / 1000)
     }
@@ -137,6 +177,33 @@ final class MenuController: NSObject, NSMenuDelegate {
     @objc private func connect(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String, let store = Stores.named(name) else { return }
         Joiner.shared.connect(to: store)
+    }
+
+    @objc private func connectWithPassword(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [String], let store = Stores.named(pair[0]) else { return }
+        Joiner.shared.connect(to: store, password: pair[1])
+    }
+
+    @objc private func enterPassword(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String, let store = Stores.named(name) else { return }
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = store.passwords.first
+        let alert = NSAlert()
+        alert.messageText = "輸入\(store.name)的 Wi-Fi 密碼"
+        alert.informativeText = "照店內張貼的密碼輸入。連上之後會記住，下次自動使用。"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "連線")
+        alert.addButton(withTitle: "取消")
+        alert.window.initialFirstResponder = field
+        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let password = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !password.isEmpty else { return }
+        // WPA passphrases are 8–63 characters; anything else can only fail, after a ~20 s wait.
+        guard (8...63).contains(password.count) else {
+            return Notifier.reply("Wi-Fi 密碼必須是 8 到 63 個字元，你輸入了 \(password.count) 個字元", manual: true)
+        }
+        Joiner.shared.connect(to: store, password: password)
     }
 
     @objc func showStats() {
