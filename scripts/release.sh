@@ -4,7 +4,9 @@
 # a workflow: the app only accepts releases whose author and zip uploader are the owner.
 #
 #   scripts/release.sh tag v0.2.0       push the tag; build.yml builds it
-#   scripts/release.sh draft v0.2.0     wait for that build, check it, create a draft release with the zip
+#   scripts/release.sh draft v0.2.0 NOTES.md
+#                                       wait for that build, check it, create a draft release with the zip;
+#                                       NOTES.md (required) is a short summary of the main changes
 #   scripts/release.sh publish v0.2.0   publish the draft (immutable from then on, if enabled)
 #
 # Each step is separate so the owner can confirm before anything becomes public.
@@ -12,7 +14,7 @@ set -euo pipefail
 
 REPO=PipperL/louisa-wifi
 OWNER=PipperL
-step=${1:-}; tag=${2:-}
+step=${1:-}; tag=${2:-}; notes_file=${3:-}
 [[ "$tag" =~ ^v[0-9]+(\.[0-9]+){1,3}$ ]] || { echo "usage: $0 tag|draft|publish vX.Y.Z" >&2; exit 2; }
 [ "$(gh api user --jq .login)" = "$OWNER" ] || { echo "not authenticated as $OWNER" >&2; exit 1; }
 
@@ -44,7 +46,10 @@ draft)
   actual=$(shasum -a 256 "$zip" 2>/dev/null | cut -d' ' -f1 || sha256sum "$zip" | cut -d' ' -f1)
   logged=$(gh run view "$id" -R "$REPO" --log | grep -oE '[0-9a-f]{64}  build/LouisaWiFi.zip' | head -1 | cut -d' ' -f1)
   [ -n "$logged" ] && [ "$actual" = "$logged" ] || { echo "SHA-256 mismatch: artifact $actual, build log $logged" >&2; exit 1; }
-  notes="Commit: $sha
+  [ -s "$notes_file" ] || { echo "draft needs a non-empty release notes file: $0 draft $tag NOTES.md" >&2; exit 2; }
+  notes="$(cat "$notes_file")
+
+Commit: $sha
 Build: https://github.com/$REPO/actions/runs/$id
 SHA-256 (LouisaWiFi.zip): $actual"
   gh release create "$tag" "$zip" -R "$REPO" --draft --verify-tag --title "$tag (${sha:0:7})" --notes "$notes"
