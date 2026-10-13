@@ -37,12 +37,6 @@ final class MenuController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         if case .connecting = status {} else { update(Joiner.shared.currentStatus().orFailure(status)) }
         menu.removeAllItems()
-        if let update = Updater.shared.available {
-            let item = action("更新到 \(update.version)", #selector(installUpdate))
-            item.attributedTitle = NSAttributedString(string: item.title, attributes: [.font: NSFont.menuFont(ofSize: 0).bold])
-            menu.addItem(item)
-            menu.addItem(.separator())
-        }
         menu.addItem(disabled(status.text))
         menu.addItem(.separator())
 
@@ -90,7 +84,6 @@ final class MenuController: NSObject, NSMenuDelegate {
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(action("檢查更新（目前 \(Updater.shared.current)）", #selector(checkForUpdates)))
         menu.addItem(NSMenuItem(title: "結束", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -141,10 +134,6 @@ final class MenuController: NSObject, NSMenuDelegate {
         statsWindow?.makeKeyAndOrderFront(nil)
         statsWindow?.orderFrontRegardless()
     }
-
-    @objc private func installUpdate() { Updater.shared.install() }
-
-    @objc private func checkForUpdates() { Updater.shared.check(manual: true) }
 
     @objc private func connectNearest() { Joiner.shared.connectNearest() }
 

@@ -10,7 +10,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, CWEventDelegate {
         Joiner.shared.onStatus = { [weak self] in self?.menu.update($0) }
         Notifier.setUp()
         Tracker.shared.start()
-        Updater.shared.start()
 
         Locator.shared.onChange = { Joiner.shared.autoConnect() }
         Locator.shared.start()
@@ -32,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, CWEventDelegate {
         return true
     }
 
-    /// louisawifi://connect?store=延平門市, louisawifi://nearest, louisawifi://stats, louisawifi://update, louisawifi://show
+    /// louisawifi://connect?store=延平門市, louisawifi://nearest, louisawifi://stats, louisawifi://show
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
@@ -47,8 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, CWEventDelegate {
                 menu.showStats()
             case "show":
                 menu.showIcon()
-            case "update":
-                if Updater.shared.available == nil { Updater.shared.check(manual: true) } else { Updater.shared.install() }
             default:
                 break
             }
