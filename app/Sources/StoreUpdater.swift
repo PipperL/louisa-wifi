@@ -31,16 +31,16 @@ final class StoreUpdater {
     private func refresh(manual: Bool) {
         guard let metaData = fetch(Self.base + "stores.meta.json"),
               let meta = try? JSONDecoder().decode(StoreMeta.self, from: metaData), let date = meta.date else {
-            if manual { Notifier.post("無法取得門市資料，請稍後再試") }
+            if manual { Notifier.reply("無法取得門市資料，請稍後再試", manual: true) }
             return
         }
         let have = Stores.meta?.date ?? .distantPast
         guard date > have else {
-            if manual { Notifier.post("門市資料已是最新（\(Stores.all.count) 間）") }
+            if manual { Notifier.reply("門市資料已是最新（\(Stores.all.count) 間）", manual: true) }
             return
         }
         guard let data = fetch(Self.base + "stores.json") else {
-            if manual { Notifier.post("無法下載門市資料，請稍後再試") }
+            if manual { Notifier.reply("無法下載門市資料，請稍後再試", manual: true) }
             return
         }
         let old = Stores.all
@@ -50,7 +50,7 @@ final class StoreUpdater {
             // The CDN can briefly serve a stale stores.json next to a new meta; that fixes itself.
             if manual || rejected != meta.sha256 {
                 rejected = meta.sha256
-                Notifier.post("下載的門市資料沒有通過檢查（\(why.text)），繼續使用目前的資料")
+                Notifier.reply("下載的門市資料沒有通過檢查（\(why.text)），繼續使用目前的資料", manual: manual)
             }
         case .success(let stores):
             do {
@@ -63,8 +63,7 @@ final class StoreUpdater {
             Stores.replace(stores, meta: meta)
             let before = Set(old.map(\.name)), after = Set(stores.map(\.name))
             let text = "門市資料已更新：新增 \(after.subtracting(before).count) 間、移除 \(before.subtracting(after).count) 間（共 \(stores.count) 間）"
-            debugLog(text)
-            Notifier.post(text)
+            Notifier.reply(text, manual: manual)
         }
     }
 

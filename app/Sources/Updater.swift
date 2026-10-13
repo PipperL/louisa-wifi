@@ -50,7 +50,7 @@ final class Updater {
         }
     }
 
-    /// `manual`: from the menu or louisawifi://update. Always ends in a dialog or a notification,
+    /// `manual`: from the menu or louisawifi://update. Always ends in a dialog,
     /// and shows a skipped version again.
     func check(manual: Bool = false) {
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repo)/releases/latest")!)
@@ -62,17 +62,17 @@ final class Updater {
             DispatchQueue.main.async {
                 // 404: no release published yet.
                 guard let release else {
-                    if manual { Notifier.post(status == 404 ? "目前已是最新版本（\(self.current)）" : "檢查更新失敗，請稍後再試") }
+                    if manual { Notifier.reply(status == 404 ? "目前已是最新版本（\(self.current)）" : "檢查更新失敗，請稍後再試", manual: true) }
                     return
                 }
                 switch self.verify(release) {
                 case .failure(let why):
                     debugLog("release \(release.tag_name) ignored: \(why.text)")
-                    if manual { Notifier.post("最新的 release 沒有通過檢查（\(why.text)），不會安裝") }
+                    if manual { Notifier.reply("最新的 release 沒有通過檢查（\(why.text)），不會安裝", manual: true) }
                 case .success(let update):
                     guard update.version.compare(self.current, options: .numeric) == .orderedDescending else {
                         self.available = nil
-                        if manual { Notifier.post("目前已是最新版本（\(self.current)）") }
+                        if manual { Notifier.reply("目前已是最新版本（\(self.current)）", manual: true) }
                         return
                     }
                     self.available = update
@@ -134,7 +134,7 @@ final class Updater {
     private func install(_ update: Update) {
         let target = Bundle.main.bundleURL
         guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
-            Notifier.post("沒有權限替換 \(target.deletingLastPathComponent().path) 裡的 App，請手動下載")
+            Notifier.reply("沒有權限替換 \(target.deletingLastPathComponent().path) 裡的 App，請手動下載", manual: true)
             NSWorkspace.shared.open(update.page)
             return
         }
@@ -169,7 +169,7 @@ final class Updater {
             } catch {
                 let why = (error as? Failure)?.text ?? error.localizedDescription
                 debugLog("update failed: \(why)")
-                DispatchQueue.main.async { Notifier.post("更新失敗（\(why)），請到 GitHub 下載新版") }
+                Notifier.reply("更新失敗（\(why)），請到 GitHub 下載新版", manual: true)
             }
         }.resume()
     }
