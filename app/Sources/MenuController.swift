@@ -37,6 +37,15 @@ final class MenuController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         if case .connecting = status {} else { update(Joiner.shared.currentStatus().orFailure(status)) }
         menu.removeAllItems()
+        if let update = Updater.shared.available {
+            let item = action("更新到 \(update.version)…", #selector(showUpdate))
+            item.attributedTitle = NSAttributedString(string: item.title, attributes: [.font: NSFont.menuFont(ofSize: 0).bold])
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
+        if let stale = StoreUpdater.shared.staleWarning {
+            menu.addItem(disabled(stale))
+        }
         menu.addItem(disabled(status.text))
         menu.addItem(.separator())
 
@@ -83,6 +92,17 @@ final class MenuController: NSObject, NSMenuDelegate {
         let login = action("登入時開啟", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
+        menu.addItem(.separator())
+
+        let version = Updater.shared.commit.map { "\(Updater.shared.current)（\($0)）" } ?? Updater.shared.current
+        menu.addItem(disabled("版本 \(version)"))
+        menu.addItem(action("檢查更新…", #selector(checkForUpdates)))
+        let notify = action("有更新時通知我", #selector(toggleUpdateChecks))
+        notify.state = Updater.shared.enabled ? .on : .off
+        menu.addItem(notify)
+        let date = Stores.meta?.date.map { $0.formatted(date: .numeric, time: .omitted) } ?? "內建"
+        menu.addItem(disabled("門市資料：\(Stores.all.count) 間（\(date)）"))
+        menu.addItem(action("更新門市資料", #selector(refreshStores)))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "結束", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
@@ -136,6 +156,14 @@ final class MenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func connectNearest() { Joiner.shared.connectNearest() }
+
+    @objc private func showUpdate() { Updater.shared.present() }
+
+    @objc private func checkForUpdates() { Updater.shared.check(manual: true) }
+
+    @objc private func toggleUpdateChecks() { Updater.shared.enabled.toggle() }
+
+    @objc private func refreshStores() { StoreUpdater.shared.check(manual: true) }
 
     @objc private func toggleAuto() {
         let on = !UserDefaults.standard.bool(forKey: "autoConnect")

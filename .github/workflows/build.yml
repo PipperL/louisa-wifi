@@ -1,10 +1,13 @@
-# Personal build: compiles the app and uploads it as a workflow artifact.
-# No release, no tag, no publishing.
+# Builds the app and uploads it as a workflow artifact. Never publishes a
+# release: releases are created only by the owner (see scripts/release.sh).
+# Store data is taken from the `data` branch, so every build ships the
+# latest reviewed data.
 name: Build
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -15,10 +18,19 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - run: ./build.sh
+      - name: Store data from the data branch
+        run: |
+          git fetch --depth=1 origin refs/heads/data
+          git show FETCH_HEAD:data/stores.json > data/stores.json
+          git show FETCH_HEAD:data/stores.meta.json > data/stores.meta.json
+          echo "Store data: data@$(git rev-parse --short FETCH_HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then export VERSION="${GITHUB_REF_NAME#v}"; fi
+          COMMIT="$(git rev-parse --short HEAD)" ./build.sh
       - run: shasum -a 256 build/LouisaWiFi.zip | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: LouisaWiFi-${{ github.sha }}
+          name: LouisaWiFi-${{ github.ref_name }}-${{ github.sha }}
           path: build/LouisaWiFi.zip
           retention-days: 30

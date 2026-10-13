@@ -5,11 +5,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, CWEventDelegate {
     private var menu: MenuController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.register(defaults: ["autoConnect": true])
+        UserDefaults.standard.register(defaults: ["autoConnect": true, "checkUpdates": true])
         menu = MenuController()
         Joiner.shared.onStatus = { [weak self] in self?.menu.update($0) }
         Notifier.setUp()
         Tracker.shared.start()
+        StoreUpdater.shared.start()
+        Updater.shared.start()
 
         Locator.shared.onChange = { Joiner.shared.autoConnect() }
         Locator.shared.start()
@@ -31,7 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, CWEventDelegate {
         return true
     }
 
-    /// louisawifi://connect?store=延平門市, louisawifi://nearest, louisawifi://stats, louisawifi://show
+    /// louisawifi://connect?store=延平門市, louisawifi://nearest, louisawifi://stats, louisawifi://show,
+    /// louisawifi://update (only checks and shows the dialog; installing always needs the user's click)
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
@@ -46,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, CWEventDelegate {
                 menu.showStats()
             case "show":
                 menu.showIcon()
+            case "update":
+                Updater.shared.check(manual: true)
             default:
                 break
             }

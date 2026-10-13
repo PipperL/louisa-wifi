@@ -1,0 +1,73 @@
+# Weekly: scrape Louisa's store list, sanity-check it, and open a PR to the
+# `data` branch. Nothing reaches the app until the owner merges that PR.
+name: Store data
+
+on:
+  schedule:
+    - cron: "37 19 * * 3"  # Thursdays 03:37 Taiwan time, away from the upstream's slot
+  workflow_dispatch:
+
+permissions:
+  contents: write        # push the data-update/weekly branch
+  pull-requests: write   # open or update the PR to `data`
+
+concurrency:
+  group: store-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: data-update/weekly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Current data from the data branch
+        run: |
+          git fetch --depth=1 origin refs/heads/data
+          mkdir -p "$RUNNER_TEMP/old"
+          git show FETCH_HEAD:data/stores.json > "$RUNNER_TEMP/old/stores.json"
+
+      - name: Scrape
+        run: |
+          python3 scripts/fetch_stores.py 2> "$RUNNER_TEMP/scrape.log" || { cat "$RUNNER_TEMP/scrape.log" >&2; exit 1; }
+          cat "$RUNNER_TEMP/scrape.log" >&2
+
+      - name: Check
+        run: |
+          python3 scripts/check_stores.py data/stores.json --old "$RUNNER_TEMP/old/stores.json" \
+            --report "$RUNNER_TEMP/report.md" --meta "$RUNNER_TEMP/stores.meta.json"
+          {
+            echo
+            echo "<details><summary>爬蟲輸出</summary>"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/scrape.log"
+            echo '```'
+            echo "</details>"
+          } >> "$RUNNER_TEMP/report.md"
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the PR to data
+        run: |
+          if cmp -s data/stores.json "$RUNNER_TEMP/old/stores.json"; then
+            echo "No change in store data." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cp data/stores.json "$RUNNER_TEMP/stores.json"
+          git checkout -- data/stores.json   # main's copy; the data branch has its own
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -B "$BRANCH" FETCH_HEAD
+          cp "$RUNNER_TEMP/stores.json" "$RUNNER_TEMP/stores.meta.json" data/
+          git add data/stores.json data/stores.meta.json
+          git commit -q -m "Store data $(date -u +%F)"
+          git push -f origin "$BRANCH"
+          pr=$(gh pr list --base data --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "門市資料更新 $(date -u +%F)" --body-file "$RUNNER_TEMP/report.md"
+          else
+            gh pr create --base data --head "$BRANCH" --title "門市資料更新 $(date -u +%F)" --body-file "$RUNNER_TEMP/report.md"
+          fi

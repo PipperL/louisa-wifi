@@ -1,3 +1,10 @@
+> **這是 [madeyexz/louisa-wifi](https://github.com/madeyexz/louisa-wifi) 的個人建置版本（fork）。** 和上游的差異：
+> - App 只從這個 fork 的 Release 更新，而且每次都會先詢問；只接受由 fork 擁有者本人發布的版本。
+> - 門市資料另外從這個 fork 的 `data` branch 更新，每週爬一次官網、經過合理性檢查並由擁有者審查後才會生效。
+> - 密碼候選會先試含開頭 0 的完整電話號碼。
+>
+> 下方是上游的說明，下載連結與安裝方式仍指向上游。
+
 <p align="center"><img src="docs/icon.png" width="128" alt="Louisa Wi-Fi 圖示"></p>
 
 <h1 align="center">Louisa Wi-Fi</h1>

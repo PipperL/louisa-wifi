@@ -73,7 +73,11 @@ def passwords(phone):
 def main():
     stores = {}
     for field, value in QUERIES:
-        for s in parse(fetch(field, value)):
+        found = list(parse(fetch(field, value)))
+        if not found:
+            # The site's markup or search probably changed; don't ship a partial list.
+            sys.exit(f"{field}={value!r} returned no stores")
+        for s in found:
             stores.setdefault(s["name"], s)
         print(f"{field}={value!r}: {len(stores)} stores so far", file=sys.stderr)
 

@@ -24,6 +24,11 @@ if [ -n "${VERSION:-}" ]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 fi
 cp data/stores.json "$APP/Contents/Resources/"
+[ -f data/stores.meta.json ] && cp data/stores.meta.json "$APP/Contents/Resources/"
+# The commit this build came from, shown in the menu.
+if [ -n "${COMMIT:-}" ]; then
+  /usr/libexec/PlistBuddy -c "Add :LouisaGitCommit string $COMMIT" "$APP/Contents/Info.plist"
+fi
 
 # App icon: app/AppIcon.png (1024×1024) → AppIcon.icns
 ICONSET=build/AppIcon.iconset
