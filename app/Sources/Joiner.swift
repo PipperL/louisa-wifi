@@ -101,8 +101,8 @@ final class Joiner {
             guard let i = self.iface, let nets = self.scan(i) else {
                 return self.report(.failed("附近找不到路易莎 Wi-Fi"), notify: true)
             }
-            let tried = self.learnedPasswords(nets.bssids, store: store.name) + store.passwords
-            for pw in unique(tried) where self.join(i, nets.best, pw) {
+            let remembered = self.learnedPasswords(nets.bssids, store: store.name)
+            for pw in unique(remembered + store.passwords) where self.join(i, nets.best, pw, self.describe(pw, store: store.name, learned: remembered.contains(pw))) {
                 self.remember(nets, store: store.name, password: pw)
                 return self.report(.connected(store.name), notify: true)
             }
@@ -141,6 +141,7 @@ final class Joiner {
         // 1. Routers we've joined before. 2. The 3 nearest stores, best guess of each first.
         var tries: [(store: String, password: String)] = []
         for b in nets.bssids { if let l = lookup(b) { tries.append((l.store, l.password)) } }
+        let remembered = Set(tries.map { $0.password })
         if let here {
             let near = Stores.nearest(to: here, limit: 3).filter { $0.meters < 5000 }.map { $0.store }
             for n in 0..<3 { for s in near where n < s.passwords.count { tries.append((s.name, s.passwords[n])) } }
@@ -155,7 +156,7 @@ final class Joiner {
         }
 
         report(.connecting(tries[0].store))
-        for t in tries where join(i, nets.best, t.password) {
+        for t in tries where join(i, nets.best, t.password, describe(t.password, store: t.store, learned: remembered.contains(t.password))) {
             remember(nets, store: t.store, password: t.password)
             return report(.connected(t.store), notify: true)
         }
@@ -175,17 +176,33 @@ final class Joiner {
                     nearby: nets.filter { $0.rssiValue > -75 }.compactMap { $0.bssid.map(norm) })
     }
 
-    private func join(_ i: CWInterface, _ net: CWNetwork, _ password: String) -> Bool {
+    /// `label` says which candidate this is, for the log; the password itself is never logged.
+    private func join(_ i: CWInterface, _ net: CWNetwork, _ password: String, _ label: String) -> Bool {
         let start = Date()
         do {
             try i.associate(to: net, password: password)
             quietUntil = Date().addingTimeInterval(15)
-            debugLog("joined in \(String(format: "%.1f", Date().timeIntervalSince(start)))s")
+            debugLog("joined in \(String(format: "%.1f", Date().timeIntervalSince(start)))s [\(label)]")
             return true
         } catch {
-            debugLog("failed in \(String(format: "%.1f", Date().timeIntervalSince(start)))s: \(error.localizedDescription)")
+            debugLog("failed in \(String(format: "%.1f", Date().timeIntervalSince(start)))s [\(label)]: \(error.localizedDescription)")
             return false
         }
+    }
+
+    /// Which form of the store's phone number a candidate is, e.g. "新竹關新直營門市 #1/2 完整號碼（03-577-0157）".
+    /// Collected in the log to learn which forms stores actually use.
+    private func describe(_ password: String, store name: String, learned: Bool) -> String {
+        if learned { return "\(name) 記住的密碼" }
+        guard let s = Stores.named(name), let n = s.passwords.firstIndex(of: password) else { return "\(name) 不明候選" }
+        let digits = s.phone.filter { $0.isASCII && $0.isNumber }
+        let form: String
+        if password.hasPrefix("0") && digits.hasPrefix(password) { form = "完整號碼" }
+        else if digits.hasPrefix("0" + password) { form = "去掉 0" }
+        else if digits.hasPrefix("02" + password) { form = "去掉區碼 02" }
+        else if password.count == 8 && digits.contains(password) { form = "後 8 碼" }
+        else { form = "其他" }
+        return "\(name) #\(n + 1)/\(s.passwords.count) \(form)（\(s.phone)）"
     }
 
     private func learnedPasswords(_ bssids: [String], store: String) -> [String] {
