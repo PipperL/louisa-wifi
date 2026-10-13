@@ -55,6 +55,10 @@ jobs:
               name = f["filename"]
               if name.startswith(".github/") or name in ("build.sh", "app/Info.plist", "install.sh"):
                   flagged.append(f"`{name}`")
+              elif "patch" not in f and f.get("status") != "removed":
+                  flagged.append(f"`{name}`（二進位檔或 diff 太大，無法直接閱讀）")
+              elif name.startswith("scripts/") or name.startswith(".agents/") or name.endswith(".sh"):
+                  flagged.append(f"`{name}`（腳本）")
               elif name.endswith(".swift") and sensitive.search(f.get("patch", "")):
                   flagged.append(f"`{name}`（含網路連線、外部程式或 URL scheme 相關變動）")
 
