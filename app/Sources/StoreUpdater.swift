@@ -4,7 +4,7 @@ import Foundation
 /// Data only ever becomes fixed-field strings and numbers; it never runs.
 final class StoreUpdater {
     static let shared = StoreUpdater()
-    static let repo = "PipperL/louisa-wifi"
+    static let repo = Updater.repo
     private static let base = "https://raw.githubusercontent.com/\(repo)/data/data/"
     /// The scheduled workflow that refreshes the data; if it hasn't succeeded in a while, say so.
     private static let workflowRuns =

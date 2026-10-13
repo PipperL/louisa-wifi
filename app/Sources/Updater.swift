@@ -12,8 +12,9 @@ import Foundation
 /// - nothing installs without the user pressing 安裝, whatever triggered the check.
 final class Updater {
     static let shared = Updater()
-    static let repo = "PipperL/louisa-wifi"
-    static let owner = "PipperL"
+    /// Written into Info.plist at build time from the GitHub repository that built it.
+    static let repo = Bundle.main.object(forInfoDictionaryKey: "LouisaUpdateRepo") as? String ?? "PipperL/louisa-wifi"
+    static let owner = Bundle.main.object(forInfoDictionaryKey: "LouisaUpdateOwner") as? String ?? "PipperL"
     static let bundleID = "io.github.louisawifi"
 
     struct Update {

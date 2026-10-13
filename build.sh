@@ -29,6 +29,12 @@ cp data/stores.json "$APP/Contents/Resources/"
 if [ -n "${COMMIT:-}" ]; then
   /usr/libexec/PlistBuddy -c "Add :LouisaGitCommit string $COMMIT" "$APP/Contents/Info.plist"
 fi
+# Where this build takes app updates and store data from, and whose releases it trusts.
+# GitHub Actions passes its own repository, so a fork's builds follow that fork.
+if [ -n "${UPDATE_REPO:-}" ] && [ -n "${UPDATE_OWNER:-}" ]; then
+  /usr/libexec/PlistBuddy -c "Add :LouisaUpdateRepo string $UPDATE_REPO" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :LouisaUpdateOwner string $UPDATE_OWNER" "$APP/Contents/Info.plist"
+fi
 
 # App icon: app/AppIcon.png (1024×1024) → AppIcon.icns
 ICONSET=build/AppIcon.iconset

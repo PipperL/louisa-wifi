@@ -1,0 +1,40 @@
+# Temporary: check that a workflow's GITHUB_TOKEN, even with contents: write,
+# can't touch main, data or v* tags, and that releases it makes are authored by the bot.
+# Every write here is expected to be rejected. Delete this file after the test.
+name: Ruleset test
+
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: |
+          set +e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bad=0
+          expect_reject() {
+            if "$@" >out.txt 2>&1; then echo "❌ NOT blocked: $*" | tee -a "$GITHUB_STEP_SUMMARY"; bad=1
+            else echo "✅ blocked: $* — $(grep -m1 -iE 'rule|denied|protected|refused|error|HTTP' out.txt)" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+          }
+          git commit -q --allow-empty -m "ruleset test (should be rejected)"
+          expect_reject git push origin HEAD:refs/heads/main
+          git fetch -q --depth=1 origin refs/heads/data
+          git checkout -q -B t FETCH_HEAD && git commit -q --allow-empty -m "ruleset test (should be rejected)"
+          expect_reject git push origin HEAD:refs/heads/data
+          expect_reject git push origin HEAD:refs/tags/v9.9.9
+          expect_reject gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/v9.9.8 -f sha="$GITHUB_SHA"
+          expect_reject gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/data" -f sha="$GITHUB_SHA" -F force=true
+
+          # Releases aren't covered by rulesets; show that a bot-made release can't pass the app's owner check.
+          rel=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" -f tag_name=ruleset-test -f target_commitish="$GITHUB_SHA" -F draft=true)
+          echo "ℹ️ bot draft release author: $(jq -r .author.login <<<"$rel") (app requires the owner)" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$(jq -r .id <<<"$rel")" && echo "ℹ️ test draft deleted" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $bad
