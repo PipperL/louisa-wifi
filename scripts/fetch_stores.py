@@ -55,15 +55,17 @@ def parse(page):
 
 def passwords(phone):
     """Louisa uses the store phone number as the Wi-Fi password, but the exact
-    form varies: usually without the leading 0, and in Taipei (02) without the
-    whole area code. Return the two most likely forms, best first."""
+    form varies: some stores use the full number, others drop the leading 0,
+    and in Taipei (02) some drop the whole area code. Return the likely forms,
+    best first."""
     # First number only; drop extensions like #12 or 分機.
     first = re.split(r"[#轉,、/]|分機|ext", phone, flags=re.I)[0]
     d = re.sub(r"\D", "", first)
     if not d:
         return []
     # A wrong password costs ~15s on macOS, so keep this list short.
-    out = [d[2:], d[1:]] if d.startswith("02") else [d[1:], d[-8:]]
+    # Full number first: verified at 新竹關新直營門市 (03-577-0157 → 035770157).
+    out = [d] + ([d[2:], d[1:]] if d.startswith("02") else [d[1:], d[-8:]])
     seen = set()
     return [p for p in out if 8 <= len(p) <= 63 and not (p in seen or seen.add(p))]
 
