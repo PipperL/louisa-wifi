@@ -66,8 +66,12 @@ jobs:
           git commit -q -m "Store data $(date -u +%F)"
           git push -f origin "$BRANCH"
           pr=$(gh pr list --base data --head "$BRANCH" --state open --json number --jq '.[0].number')
+          title="門市資料更新 $(date -u +%F)"
           if [ -n "$pr" ]; then
-            gh pr edit "$pr" --title "門市資料更新 $(date -u +%F)" --body-file "$RUNNER_TEMP/report.md" --add-assignee "$GITHUB_REPOSITORY_OWNER"
+            # REST rather than `gh pr edit`, which can fail on the deprecated Projects (classic) GraphQL fields
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$pr" -f title="$title" -F body=@"$RUNNER_TEMP/report.md" >/dev/null
           else
-            gh pr create --base data --head "$BRANCH" --title "門市資料更新 $(date -u +%F)" --body-file "$RUNNER_TEMP/report.md" --assignee "$GITHUB_REPOSITORY_OWNER"   # so it shows up in the owner's PR list
+            pr=$(gh pr create --base data --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/report.md" | grep -oE '[0-9]+$')
           fi
+          # assign to the owner so it shows up in their pull request list
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/assignees" -f "assignees[]=$GITHUB_REPOSITORY_OWNER" >/dev/null
